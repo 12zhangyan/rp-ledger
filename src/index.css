@@ -342,8 +342,23 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 
+tfoot td {
+  border-bottom: 0;
+  border-top: 2px solid #f0d4dd;
+  background: #fff7fa;
+  font-weight: 800;
+}
+
+tr.total-row td {
+  background: #fff0f4;
+}
+
 tr:hover td {
   background: #fff7fa;
+}
+
+tfoot tr.total-row:hover td {
+  background: #ffe8ef;
 }
 
 .amount-neg,

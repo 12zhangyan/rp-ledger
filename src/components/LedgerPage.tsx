@@ -756,7 +756,7 @@ export default function LedgerPage({
               </div>
               {!detail.attachments?.length ? (
                 <div className="empty" style={{ padding: 18 }}>
-                  暂无凭证。可上传小票照片或 PDF，导出票据文件夹时会按分类归档。
+                  暂无凭证。可上传小票照片或 PDF，导出时按分类与几号到几号归档。
                 </div>
               ) : (
                 <div className="detail-gallery">
@@ -972,7 +972,7 @@ export default function LedgerPage({
       )}
 
       <p className="hint-line">
-        报账日期用于月度筛选/导出；导出票据时按月份下的分类建文件夹。业务期间写入文件名便于辨认。凭证支持图片与 PDF。
+        报账日期用于月度筛选/导出；导出票据为「月份 / 分类 / 几号到几号」。凭证支持图片与 PDF。
         当前：{applied.year ? `${applied.year}年` : '全部年份'}
         {applied.month ? ` · ${Number(applied.month)}月` : ' · 全年'}。
       </p>

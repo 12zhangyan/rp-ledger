@@ -615,7 +615,10 @@ function formatAmountForFile(amount) {
 }
 function buildReceiptFileName(opts) {
   const date = sanitizeFilePart(opts.date || '')
-  const period = sanitizeFilePart(formatPeriodFolder(opts.periodStart, opts.periodEnd)) || '未填期间'
+  const period =
+    opts.periodStart || opts.periodEnd
+      ? sanitizeFilePart(formatPeriodFolder(opts.periodStart, opts.periodEnd)) || '未填期间'
+      : ''
   const note = sanitizeFilePart(opts.note || '')
   const cat = sanitizeFilePart(opts.categoryName || '')
   const amount = formatAmountForFile(opts.amount)
@@ -630,6 +633,21 @@ function buildReceiptFileName(opts) {
 }
 function categoryFolderName(categoryName) {
   return sanitizeFilePart(categoryName || '') || '未分类'
+}
+function periodFolderName(start, end) {
+  const label = formatPeriodLabel(start, end).replace(/[\u2013\u2014]/g, '-')
+  if (!label || label === '-') return '未填期间'
+  return sanitizeFilePart(label) || '未填期间'
+}
+function formatPeriodLabel(start, end) {
+  if (!start && !end) return '-'
+  let a = parseYmd(start || end)
+  let b = parseYmd(end || start)
+  if (!a || !b) return '-'
+  ;[a, b] = orderPair(a, b)
+  if (a.y === b.y && a.mo === b.mo && a.d === b.d) return `${a.mo}.${a.d}`
+  if (a.y === b.y) return `${a.mo}.${a.d}–${b.mo}.${b.d}`
+  return `${a.y}.${a.mo}.${a.d}–${b.y}.${b.mo}.${b.d}`
 }
 function parsePeriodFolderText(raw, yearHint) {
   const s0 = String(raw || '')
@@ -724,6 +742,18 @@ round('期间文件夹与文件名', () => {
   assert.equal(categoryFolderName('交通费'), '交通费')
   assert.equal(categoryFolderName(null), '未分类')
   assert.equal(categoryFolderName('a/b'), 'a_b')
+  assert.equal(periodFolderName('2026-07-03', '2026-07-24'), '7.3-7.24')
+  assert.equal(periodFolderName('2026-07-06', '2026-07-06'), '7.6')
+  assert.equal(periodFolderName(null, null), '未填期间')
+  assert.equal(
+    buildReceiptFileName({
+      date: '2026-08-15',
+      note: 'grab打车',
+      amount: -1204999,
+      ext: '.pdf',
+    }),
+    '2026-08-15 grab打车 1204999.pdf',
+  )
   assert.deepEqual(parsePeriodFolderText('7.3–7.24', '2026-08-01'), {
     period_start: '2026-07-03',
     period_end: '2026-07-24',

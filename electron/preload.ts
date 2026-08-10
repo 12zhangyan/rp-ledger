@@ -57,8 +57,10 @@ const api = {
   ) => ipcRenderer.invoke('transactions:update', id, input),
   deleteTransaction: (id: number) => ipcRenderer.invoke('transactions:delete', id),
 
-  getAccountSummary: (month?: string) => ipcRenderer.invoke('stats:accounts', month),
-  getCategoryStats: (month?: string) => ipcRenderer.invoke('stats:categories', month),
+  getAccountSummary: (range?: string | { start?: string; end?: string; month?: string }) =>
+    ipcRenderer.invoke('stats:accounts', range),
+  getCategoryStats: (range?: string | { start?: string; end?: string; month?: string }) =>
+    ipcRenderer.invoke('stats:categories', range),
   listMonths: () => ipcRenderer.invoke('months:list'),
   listYears: () => ipcRenderer.invoke('years:list'),
 

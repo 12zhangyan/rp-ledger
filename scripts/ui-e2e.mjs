@@ -95,7 +95,7 @@ try {
     const brand = await page.locator('.brand-mark').innerText()
     log('品牌展示', brand.includes('印尼盾记账'), brand)
     const ver = await page.locator('.version-pill').innerText().catch(() => '')
-    log('版本号显示', /^v?1\.4\.6$/.test(ver.trim()) || ver.includes('1.4.6'), ver || '(空)')
+    log('版本号显示', /^v?1\.4\.9$/.test(ver.trim()) || ver.includes('1.4.9'), ver || '(空)')
     const h1 = await page.locator('h1').first().innerText()
     log('默认记账明细页', h1.includes('记账明细'), h1)
     const sub = await page.locator('.topbar p').first().innerText()

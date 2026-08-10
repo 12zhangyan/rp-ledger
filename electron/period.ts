@@ -145,6 +145,18 @@ export function sanitizeFilePart(raw: string): string {
     .replace(/[. ]+$/g, '')
 }
 
+/** 导出路径/分组用：分类名 → 未分类 */
+export function categoryPathLabel(categoryName?: string | null): string {
+  return sanitizeFilePart(categoryName || '') || '未分类'
+}
+
+/** 导出路径/分组用：几号到几号（7.3-7.24）；无期间 → 未填期间 */
+export function periodPathLabel(start?: string | null, end?: string | null): string {
+  const label = formatPeriodLabel(start, end).replace(/[\u2013\u2014]/g, '-')
+  if (!label || label === '-') return '未填期间'
+  return sanitizeFilePart(label) || '未填期间'
+}
+
 function formatAmountForFile(amount: number): string {
   const abs = Math.abs(Number(amount) || 0)
   if (!Number.isFinite(abs)) return '0'
@@ -163,7 +175,11 @@ export function buildReceiptFileName(opts: {
   ext: string
 }): string {
   const date = sanitizeFilePart(opts.date || '')
-  const period = sanitizeFilePart(formatPeriodFolder(opts.periodStart, opts.periodEnd)) || '未填期间'
+  // 仅在显式提供期间时写入文件名；都为空则省略（路径里已有「几号到几号」文件夹时用）
+  const period =
+    opts.periodStart || opts.periodEnd
+      ? sanitizeFilePart(formatPeriodFolder(opts.periodStart, opts.periodEnd)) || '未填期间'
+      : ''
   const note = sanitizeFilePart(opts.note || '')
   const cat = sanitizeFilePart(opts.categoryName || '')
   const amount = formatAmountForFile(opts.amount)

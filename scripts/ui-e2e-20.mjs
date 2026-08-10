@@ -144,9 +144,9 @@ try {
     const brand = await page.locator('.brand-mark').innerText()
     check('品牌名', brand.trim() === '印尼盾记账', brand)
     const verUi = (await page.locator('.version-pill').first().innerText()).trim()
-    check('侧栏版本 pill', verUi.includes('1.4.6'), verUi)
+    check('侧栏版本 pill', verUi.includes('1.4.9'), verUi)
     const verApi = await page.evaluate(() => window.api.getVersion())
-    check('API 版本一致', verApi === '1.4.6', verApi)
+    check('API 版本一致', verApi === '1.4.9', verApi)
     const h1 = await page.locator('h1').first().innerText()
     check('默认页记账明细', h1.includes('记账明细'), h1)
     const sub = await page.locator('.topbar p').first().innerText()
@@ -602,38 +602,54 @@ try {
   startRound(13, '账户汇总正确性')
   {
     const sum = await page.evaluate(async () => {
-      const rows = await window.api.getAccountSummary('2026-07')
+      const rows = await window.api.getAccountSummary({
+        start: '2026-07-01',
+        end: '2026-07-31',
+      })
+      const byMonth = await window.api.getAccountSummary('2026-07')
       const all = await window.api.getAccountSummary()
       const q = await window.api.queryTransactions({ year: '2026', month: '07', page: 1, pageSize: 100 })
-      return { rows, all, income: q.income, expense: q.expense, total: q.total }
+      return { rows, byMonth, all, income: q.income, expense: q.expense, total: q.total }
     })
-    check('7 月汇总有账户行', sum.rows.length >= 1, String(sum.rows.length))
+    check('7 月区间汇总有账户行', sum.rows.length >= 1, String(sum.rows.length))
+    check('月份字符串与区间结果一致', sum.rows[0]?.income === sum.byMonth[0]?.income)
     const pay = sum.rows.find((r) => r.id === ctx.accountId) || sum.rows[0]
     check('汇总含收入/支出字段', pay && ('income' in pay || 'expense' in pay || 'ending' in pay || 'end_balance' in pay), JSON.stringify(pay).slice(0, 120))
     check('查询合计收入>0', sum.income > 0, String(sum.income))
     check('查询合计支出>0', sum.expense > 0, String(sum.expense))
 
     await gotoTab(page, '账户汇总')
-    const monthInput = page.locator('input[type="month"]')
-    if (await monthInput.count()) await monthInput.fill('2026-07')
+    const dates = page.locator('input[type="date"]')
+    if ((await dates.count()) >= 2) {
+      await dates.nth(0).fill('2026-07-01')
+      await dates.nth(1).fill('2026-07-31')
+    }
     await page.waitForTimeout(400)
     const mainText = await page.locator('main').innerText()
     check('汇总页有表格或数字', /\d/.test(mainText) && !mainText.includes('桌面接口未就绪'))
+    check('汇总页有合计行', mainText.includes('合计'))
   }
   endRound()
 
   // —— 14 分类统计 ——
   startRound(14, '分类统计正确性')
   {
-    const stats = await page.evaluate(async () => window.api.getCategoryStats('2026-07'))
+    const stats = await page.evaluate(async () =>
+      window.api.getCategoryStats({ start: '2026-07-01', end: '2026-07-31' }),
+    )
     check('有分类统计行', stats.length >= 1, String(stats.length))
     const traffic = stats.find((s) => /交通|E2E|餐|食/.test(s.name)) || stats[0]
     check('统计含笔数', typeof traffic.count === 'number' && traffic.count >= 1, JSON.stringify(traffic))
     await gotoTab(page, '分类统计')
-    const monthInput = page.locator('input[type="month"]')
-    if (await monthInput.count()) await monthInput.fill('2026-07')
+    const dates = page.locator('input[type="date"]')
+    if ((await dates.count()) >= 2) {
+      await dates.nth(0).fill('2026-07-01')
+      await dates.nth(1).fill('2026-07-31')
+    }
     await page.waitForTimeout(400)
-    check('统计页渲染', (await page.locator('main table tbody tr').count()) >= 1 || (await page.locator('main').innerText()).length > 30)
+    const text = await page.locator('main').innerText()
+    check('统计页渲染', (await page.locator('main table tbody tr').count()) >= 1 || text.length > 30)
+    check('统计页有合计行', text.includes('合计'))
   }
   endRound()
 
@@ -646,7 +662,7 @@ try {
     await page.waitForTimeout(350)
     let modal = page.locator('[role="dialog"], .modal').filter({ hasText: /导出/ })
     let text = await modal.first().innerText()
-    check('票据导出对话框', /票据|分类|文件夹/.test(text), text.slice(0, 100))
+    check('票据导出对话框', /票据|分类|几号到几号|文件夹/.test(text), text.slice(0, 100))
     check('可选年份月份', /年份|月份|2026/.test(text))
     await page.keyboard.press('Escape')
     await page.waitForTimeout(200)
@@ -834,7 +850,7 @@ try {
     check('7 月笔数合理', final.julTotal >= 12, String(final.julTotal))
     check('符号规则全局成立', final.signOk)
     check('期间起止顺序全局成立', final.periodOk)
-    check('版本仍为 1.4.6', final.ver === '1.4.6', final.ver)
+    check('版本仍为 1.4.9', final.ver === '1.4.9', final.ver)
     check('数据目录仍隔离', String(final.path).includes('rp-ledger-e2e20'), final.path)
 
     const dbFile = path.join(final.path, 'ledger.sqlite')

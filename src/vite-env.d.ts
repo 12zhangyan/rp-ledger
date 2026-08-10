@@ -47,8 +47,12 @@ interface LedgerApi {
   createTransaction: (input: TxInput) => Promise<number>
   updateTransaction: (id: number, input: TxInput) => Promise<void>
   deleteTransaction: (id: number) => Promise<boolean>
-  getAccountSummary: (month?: string) => Promise<any[]>
-  getCategoryStats: (month?: string) => Promise<any[]>
+  getAccountSummary: (
+    range?: string | { start?: string; end?: string; month?: string },
+  ) => Promise<any[]>
+  getCategoryStats: (
+    range?: string | { start?: string; end?: string; month?: string },
+  ) => Promise<any[]>
   listMonths: () => Promise<{ month: string }[]>
   listYears: () => Promise<{ year: string }[]>
   addAttachments: (transactionId: number) => Promise<any[]>

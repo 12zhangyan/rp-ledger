@@ -238,8 +238,13 @@ function registerIpc() {
     return true
   })
 
-  ipcMain.handle('stats:accounts', (_e, month?: string) => getAccountSummary(month))
-  ipcMain.handle('stats:categories', (_e, month?: string) => getCategoryStats(month))
+  ipcMain.handle('stats:accounts', (_e, range?: string | { start?: string; end?: string; month?: string }) =>
+    getAccountSummary(range),
+  )
+  ipcMain.handle(
+    'stats:categories',
+    (_e, range?: string | { start?: string; end?: string; month?: string }) => getCategoryStats(range),
+  )
   ipcMain.handle('months:list', () => getMonthsWithData())
   ipcMain.handle('years:list', () => getYearsWithData())
 
@@ -323,7 +328,7 @@ function registerIpc() {
       throw new Error('请选择有效的年份和月份')
     }
     const result = await dialog.showOpenDialog(mainWindow!, {
-      title: `选择导出目录（将按分类创建子文件夹）· ${month}`,
+      title: `选择导出目录（分类 → 几号到几号）· ${month}`,
       properties: ['openDirectory', 'createDirectory'],
     })
     if (result.canceled || !result.filePaths[0]) return null

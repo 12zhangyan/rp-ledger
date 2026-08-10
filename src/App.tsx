@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import LedgerPage from './components/LedgerPage'
 import { friendlyError } from './lib/errors'
-import { currentMonth, formatAmount, formatMonthLabel, formatRp } from './lib/format'
+import { currentMonth, formatAmount, formatMonthLabel, formatPeriodLabel, formatRp } from './lib/format'
 import type { Account, AccountSummary, Category, CategoryStat, DocType } from './types'
 
 type Tab = 'ledger' | 'accounts' | 'stats' | 'settings'
@@ -10,9 +10,20 @@ function currentYear() {
   return String(new Date().getFullYear())
 }
 
+function monthBounds(month = currentMonth()) {
+  const [y, m] = month.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  return {
+    start: `${month}-01`,
+    end: `${month}-${String(last).padStart(2, '0')}`,
+  }
+}
+
 export default function App() {
+  const initialBounds = monthBounds()
   const [tab, setTab] = useState<Tab>('ledger')
-  const [viewMonth, setViewMonth] = useState(currentMonth())
+  const [viewStart, setViewStart] = useState(initialBounds.start)
+  const [viewEnd, setViewEnd] = useState(initialBounds.end)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [docTypes, setDocTypes] = useState<DocType[]>([])
@@ -30,6 +41,26 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('')
 
   const apiReady = typeof window !== 'undefined' && !!window.api
+  const statsRange = { start: viewStart || null, end: viewEnd || null }
+  const rangeLabel = formatPeriodLabel(viewStart, viewEnd)
+  const summaryTotal = summary.reduce(
+    (acc, a) => ({
+      opening_balance: acc.opening_balance + Number(a.opening_balance || 0),
+      income: acc.income + Number(a.income || 0),
+      expense: acc.expense + Number(a.expense || 0),
+      net: acc.net + Number(a.net || 0),
+      current_balance: acc.current_balance + Number(a.current_balance || 0),
+    }),
+    { opening_balance: 0, income: 0, expense: 0, net: 0, current_balance: 0 },
+  )
+  const statsTotal = stats.reduce(
+    (acc, s) => ({
+      expense: acc.expense + Number(s.expense || 0),
+      income: acc.income + Number(s.income || 0),
+      count: acc.count + Number(s.count || 0),
+    }),
+    { expense: 0, income: 0, count: 0 },
+  )
 
   function showToast(msg: string) {
     setToast(msg)
@@ -52,11 +83,11 @@ export default function App() {
     setYears(yearList.map((y: { year: string }) => y.year))
   }
 
-  async function refreshStats(month = viewMonth) {
+  async function refreshStats(range = statsRange) {
     if (!apiReady) return
     const [sum, catStats] = await Promise.all([
-      window.api.getAccountSummary(month),
-      window.api.getCategoryStats(month),
+      window.api.getAccountSummary(range),
+      window.api.getCategoryStats(range),
     ])
     setSummary(sum)
     setStats(catStats)
@@ -72,10 +103,10 @@ export default function App() {
   useEffect(() => {
     if (!apiReady) return
     if (tab === 'accounts' || tab === 'stats') {
-      refreshStats(viewMonth).catch((e) => showToast(friendlyError(e)))
+      refreshStats(statsRange).catch((e) => showToast(friendlyError(e)))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, viewMonth, apiReady])
+  }, [tab, viewStart, viewEnd, apiReady])
 
   useEffect(() => {
     if (!exportOpen || !apiReady) return
@@ -128,7 +159,7 @@ export default function App() {
   async function showAbout() {
     const ver = await window.api.getVersion()
     alert(
-      `印尼盾记账\n版本 ${ver}\n\n本地账本软件，数据保存在本机，货币单位为印尼盾（Rp）。\n支持报账日期、业务期间、图片/PDF 凭证；导出票据时按月份与分类分文件夹。`,
+      `印尼盾记账\n版本 ${ver}\n\n本地账本软件，数据保存在本机，货币单位为印尼盾（Rp）。\n支持报账日期、业务期间、图片/PDF 凭证；导出票据按「月份 / 分类 / 几号到几号」分文件夹。`,
     )
   }
 
@@ -171,7 +202,7 @@ export default function App() {
             if (result.skippedError) parts.push(`失败 ${result.skippedError}`)
             const skipTip = parts.length ? `，跳过：${parts.join('、')}` : ''
             showToast(
-              `已导出 ${result.files} 个文件到 ${result.folders} 个分类文件夹${skipTip}：${result.targetDir}`,
+              `已导出 ${result.files} 个文件到 ${result.folders} 个期间文件夹${skipTip}：${result.targetDir}`,
             )
           }
         }
@@ -229,7 +260,7 @@ export default function App() {
     })
     showToast('账户已保存')
     await refreshMeta()
-    await refreshStats(viewMonth)
+    await refreshStats(statsRange)
   }
 
   async function addNamed(kind: 'account' | 'category' | 'doc', name: string) {
@@ -317,20 +348,26 @@ export default function App() {
             </h1>
             <p>
               {tab === 'ledger'
-                ? '报账日期 · 业务期间 · 图片/PDF 凭证 · 按分类导出票据文件夹'
-                : `汇总月份 ${formatMonthLabel(viewMonth)}`}
+                ? '报账日期 · 业务期间 · 图片/PDF 凭证 · 按分类与几号到几号导出'
+                : `汇总区间 ${rangeLabel === '-' ? '全部' : rangeLabel}`}
             </p>
           </div>
           <div className="toolbar">
             {(tab === 'accounts' || tab === 'stats') && (
-              <div className="field">
-                <label>汇总月份</label>
-                <input
-                  type="month"
-                  value={viewMonth}
-                  onChange={(e) => setViewMonth(e.target.value)}
-                />
-              </div>
+              <>
+                <div className="field">
+                  <label>几号起</label>
+                  <input
+                    type="date"
+                    value={viewStart}
+                    onChange={(e) => setViewStart(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>几号止</label>
+                  <input type="date" value={viewEnd} onChange={(e) => setViewEnd(e.target.value)} />
+                </div>
+              </>
             )}
             <button className="btn secondary" disabled={busy} onClick={() => importExcel('merge')}>
               导入
@@ -388,6 +425,20 @@ export default function App() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="total-row">
+                  <td>合计</td>
+                  <td className="col-num amount-muted">{formatAmount(summaryTotal.opening_balance)}</td>
+                  <td className="col-num amount-pos">{formatAmount(summaryTotal.income)}</td>
+                  <td className="col-num amount-neg">{formatAmount(summaryTotal.expense)}</td>
+                  <td
+                    className={`col-num ${summaryTotal.net < 0 ? 'amount-neg' : 'amount-pos'}`}
+                  >
+                    {formatAmount(summaryTotal.net)}
+                  </td>
+                  <td className="col-num num">{formatAmount(summaryTotal.current_balance)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -413,6 +464,14 @@ export default function App() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="total-row">
+                  <td>合计</td>
+                  <td className="col-num amount-neg">{formatAmount(statsTotal.expense)}</td>
+                  <td className="col-num amount-pos">{formatAmount(statsTotal.income)}</td>
+                  <td className="col-num num">{statsTotal.count}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -554,8 +613,8 @@ export default function App() {
             </h3>
             <p style={{ color: 'var(--muted)', marginTop: 0 }}>
               {exportMode === 'receipts'
-                ? '按报账年月筛选流水，再按「分类」建子文件夹，放入该月全部图片/PDF。Esc 关闭。'
-                : '生成日记账工作簿（含业务期间列；PDF 在凭证表中列文件名）。Esc 关闭。'}
+                ? '按报账年月筛选，再按「分类 → 几号到几号」建文件夹，放入该月全部图片/PDF。Esc 关闭。'
+                : '生成日记账工作簿：总表按分类→几号到几号排序，并按分类分工作表分组。Esc 关闭。'}
             </p>
             <div className="toolbar" style={{ marginBottom: 12 }}>
               <button
@@ -614,8 +673,8 @@ export default function App() {
                     ? '该月暂无流水，无可导出凭证。'
                     : '该月暂无流水，仍可导出空表模板。'
                   : exportMode === 'receipts'
-                    ? `将导出该月 ${exportCount} 笔流水的凭证，按分类分文件夹。`
-                    : `将导出 ${exportCount} 笔流水及关联凭证。`}
+                    ? `将导出该月 ${exportCount} 笔流水的凭证，按分类与几号到几号分文件夹。`
+                    : `将导出 ${exportCount} 笔流水：总表排序 + 按分类分表（内按几号到几号分组）。`}
             </div>
             {months.length > 0 && (
               <div className="month-chips">

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { listTransactionsForExport } from './db'
 import { getImagePath } from './paths'
-import { buildReceiptFileName, sanitizeFilePart } from './period'
+import { buildReceiptFileName, categoryPathLabel, periodPathLabel } from './period'
 
 export type ExportReceiptsResult = {
   folders: number
@@ -26,13 +26,9 @@ function uniquePath(dir: string, fileName: string): string {
   return dest
 }
 
-function categoryFolderName(categoryName?: string | null): string {
-  return sanitizeFilePart(categoryName || '') || '未分类'
-}
-
 /**
- * 按报账年月筛选流水，按「分类」建子文件夹，复制该月全部图片/PDF。
- * 例：票据_2026-08/交通费/…、票据_2026-08/生活费/…
+ * 按报账年月筛选流水，结构：分类 / 几号到几号 / 图片与 PDF。
+ * 例：票据_2026-08/交通费/7.3-7.24/xxx.pdf
  */
 export function exportReceiptFolders(month: string, targetDir: string): ExportReceiptsResult {
   if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -60,19 +56,16 @@ export function exportReceiptFolders(month: string, targetDir: string): ExportRe
           fs.mkdirSync(targetDir, { recursive: true })
           rootCreated = true
         }
-        const folderName = categoryFolderName(tx.category_name)
-        const folderPath = path.join(targetDir, folderName)
+        const catFolder = categoryPathLabel(tx.category_name)
+        const periodFolder = periodPathLabel(tx.period_start, tx.period_end)
+        const folderPath = path.join(targetDir, catFolder, periodFolder)
         fs.mkdirSync(folderPath, { recursive: true })
-        folderSet.add(folderName)
+        folderSet.add(`${catFolder}/${periodFolder}`)
 
         const ext = path.extname(att.stored_name || att.file_name || '').toLowerCase() || '.bin'
-        // 分类已在文件夹名中，文件名带报账日 + 期间 + 备注 + 金额
         const fileName = buildReceiptFileName({
           date: tx.date,
-          periodStart: tx.period_start,
-          periodEnd: tx.period_end,
           note: tx.note,
-          categoryName: null,
           amount: tx.amount,
           ext,
         })

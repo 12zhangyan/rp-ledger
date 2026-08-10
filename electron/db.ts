@@ -730,50 +730,85 @@ export function getYearsWithData() {
   )
 }
 
-export function getAccountSummary(month?: string) {
+/** 汇总筛选：几号到几号；兼容旧版 YYYY-MM 月份字符串 */
+export type StatsRange =
+  | string
+  | {
+      start?: string | null
+      end?: string | null
+      month?: string | null
+    }
+  | null
+  | undefined
+
+function resolveStatsRange(range?: StatsRange): { start: string | null; end: string | null } {
+  if (range == null || range === '') return { start: null, end: null }
+  if (typeof range === 'string') {
+    if (/^\d{4}-\d{2}$/.test(range)) {
+      const [y, m] = range.split('-').map(Number)
+      const last = new Date(y, m, 0).getDate()
+      return {
+        start: `${range}-01`,
+        end: `${range}-${String(last).padStart(2, '0')}`,
+      }
+    }
+    return { start: null, end: null }
+  }
+  if (range.month && /^\d{4}-\d{2}$/.test(range.month) && !range.start && !range.end) {
+    return resolveStatsRange(range.month)
+  }
+  let start = range.start && /^\d{4}-\d{2}-\d{2}$/.test(range.start) ? range.start : null
+  let end = range.end && /^\d{4}-\d{2}-\d{2}$/.test(range.end) ? range.end : null
+  if (start && end && start > end) [start, end] = [end, start]
+  return { start, end }
+}
+
+function appendDateRangeSql(
+  sql: string,
+  params: unknown[],
+  start: string | null,
+  end: string | null,
+  column = 'date',
+) {
+  let out = sql
+  if (start) {
+    out += ` AND ${column} >= ?`
+    params.push(start)
+  }
+  if (end) {
+    out += ` AND ${column} <= ?`
+    params.push(end)
+  }
+  return out
+}
+
+export function getAccountSummary(range?: StatsRange) {
+  const { start, end } = resolveStatsRange(range)
   const accounts = listAccounts().filter((a) => a.name !== '月余额')
 
   return accounts.map((acc) => {
     const periodParams: unknown[] = [acc.id]
-    let periodFilter = ''
-    if (month && /^\d{4}-\d{2}$/.test(month)) {
-      periodFilter = ` AND strftime('%Y-%m', date) = ?`
-      periodParams.push(month)
-    }
+    let periodSql = `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
+         WHERE account_id = ? AND amount > 0`
+    periodSql = appendDateRangeSql(periodSql, periodParams, start, end)
 
-    const income = Number(
-      queryOne<{ s: number }>(
-        `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
-         WHERE account_id = ? AND amount > 0${periodFilter}`,
-        periodParams,
-      )?.s ?? 0,
-    )
-    const expense = Number(
-      queryOne<{ s: number }>(
-        `SELECT COALESCE(SUM(ABS(amount)), 0) AS s FROM transactions
-         WHERE account_id = ? AND amount < 0${periodFilter}`,
-        periodParams,
-      )?.s ?? 0,
-    )
+    const income = Number(queryOne<{ s: number }>(periodSql, periodParams)?.s ?? 0)
+
+    const expParams: unknown[] = [acc.id]
+    let expSql = `SELECT COALESCE(SUM(ABS(amount)), 0) AS s FROM transactions
+         WHERE account_id = ? AND amount < 0`
+    expSql = appendDateRangeSql(expSql, expParams, start, end)
+    const expense = Number(queryOne<{ s: number }>(expSql, expParams)?.s ?? 0)
     const net = income - expense
 
-    // 期末余额 = 期初 + 截止该月末（或全部）的累计净变动
+    // 期末余额 = 期初 + 截止区间末日（或全部）的累计净变动
     const endParams: unknown[] = [acc.id]
-    let endFilter = ''
-    if (month && /^\d{4}-\d{2}$/.test(month)) {
-      const [y, m] = month.split('-').map(Number)
-      const next =
-        m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
-      endFilter = ' AND date < ?'
-      endParams.push(next)
+    let endSql = `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ?`
+    if (end) {
+      endSql += ' AND date <= ?'
+      endParams.push(end)
     }
-    const cumulative = Number(
-      queryOne<{ s: number }>(
-        `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions
-         WHERE account_id = ?${endFilter}`,
-        endParams,
-      )?.s ?? 0,
-    )
+    const cumulative = Number(queryOne<{ s: number }>(endSql, endParams)?.s ?? 0)
 
     return {
       id: acc.id,
@@ -787,9 +822,11 @@ export function getAccountSummary(month?: string) {
   })
 }
 
-export function getCategoryStats(month?: string) {
+export function getCategoryStats(range?: StatsRange) {
+  const { start, end } = resolveStatsRange(range)
   const cats = listCategories()
   return cats.map((cat) => {
+    const params: unknown[] = [cat.id]
     let sql = `
       SELECT
         COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) AS expense,
@@ -798,11 +835,7 @@ export function getCategoryStats(month?: string) {
       FROM transactions
       WHERE category_id = ?
     `
-    const params: unknown[] = [cat.id]
-    if (month) {
-      sql += ` AND strftime('%Y-%m', date) = ?`
-      params.push(month)
-    }
+    sql = appendDateRangeSql(sql, params, start, end)
     const row = queryOne<{ expense: number; income: number; cnt: number }>(sql, params)
     return {
       id: cat.id,
