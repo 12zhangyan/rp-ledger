@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import LedgerPage from './components/LedgerPage'
 import { friendlyError } from './lib/errors'
-import { currentMonth, formatAmount, formatMonthLabel, formatPeriodLabel, formatRp } from './lib/format'
+import { currentMonth, formatAmount, formatMonthLabel, formatPeriodLabel } from './lib/format'
 import type { Account, AccountSummary, Category, CategoryStat, DocType } from './types'
 
 type Tab = 'ledger' | 'accounts' | 'stats' | 'settings'
@@ -41,31 +41,54 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('')
 
   const apiReady = typeof window !== 'undefined' && !!window.api
-  const statsRange = { start: viewStart || null, end: viewEnd || null }
+  const statsRange = useMemo(
+    () => ({ start: viewStart || null, end: viewEnd || null }),
+    [viewStart, viewEnd],
+  )
   const rangeLabel = formatPeriodLabel(viewStart, viewEnd)
-  const summaryTotal = summary.reduce(
-    (acc, a) => ({
-      opening_balance: acc.opening_balance + Number(a.opening_balance || 0),
-      income: acc.income + Number(a.income || 0),
-      expense: acc.expense + Number(a.expense || 0),
-      net: acc.net + Number(a.net || 0),
-      current_balance: acc.current_balance + Number(a.current_balance || 0),
-    }),
-    { opening_balance: 0, income: 0, expense: 0, net: 0, current_balance: 0 },
+  const summaryTotal = useMemo(
+    () =>
+      summary.reduce(
+        (acc, a) => ({
+          opening_balance: acc.opening_balance + Number(a.opening_balance || 0),
+          income: acc.income + Number(a.income || 0),
+          expense: acc.expense + Number(a.expense || 0),
+          net: acc.net + Number(a.net || 0),
+          current_balance: acc.current_balance + Number(a.current_balance || 0),
+        }),
+        { opening_balance: 0, income: 0, expense: 0, net: 0, current_balance: 0 },
+      ),
+    [summary],
   )
-  const statsTotal = stats.reduce(
-    (acc, s) => ({
-      expense: acc.expense + Number(s.expense || 0),
-      income: acc.income + Number(s.income || 0),
-      count: acc.count + Number(s.count || 0),
-    }),
-    { expense: 0, income: 0, count: 0 },
+  const statsTotal = useMemo(
+    () =>
+      stats.reduce(
+        (acc, s) => ({
+          expense: acc.expense + Number(s.expense || 0),
+          income: acc.income + Number(s.income || 0),
+          count: acc.count + Number(s.count || 0),
+        }),
+        { expense: 0, income: 0, count: 0 },
+      ),
+    [stats],
   )
+  const toastTimer = useRef<number | null>(null)
 
-  function showToast(msg: string) {
+  const showToast = useCallback((msg: string) => {
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
     setToast(msg)
-    window.setTimeout(() => setToast(''), 3200)
-  }
+    toastTimer.current = window.setTimeout(() => {
+      setToast('')
+      toastTimer.current = null
+    }, 3200)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
+    },
+    [],
+  )
 
   async function refreshMeta() {
     if (!apiReady) return
@@ -273,9 +296,13 @@ export default function App() {
     await refreshMeta()
   }
 
-  const yearOptions = Array.from(
-    new Set([currentYear(), ...years, ...months.map((m) => m.slice(0, 4))]),
-  ).sort((a, b) => Number(b) - Number(a))
+  const yearOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([currentYear(), ...years, ...months.map((m) => m.slice(0, 4))]),
+      ).sort((a, b) => Number(b) - Number(a)),
+    [years, months],
+  )
 
   if (!apiReady) {
     return (

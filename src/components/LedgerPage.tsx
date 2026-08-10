@@ -78,10 +78,14 @@ export default function LedgerPage({
   onOpenExportReceipts: (year?: string, month?: string) => void
   onMetaChange: () => Promise<void>
 }) {
-  const saved = loadJson('ledger-query', {
-    query: defaultQuery(),
-    pageSize: 10,
-  })
+  const saved = useMemo(
+    () =>
+      loadJson('ledger-query', {
+        query: defaultQuery(),
+        pageSize: 10,
+      }),
+    [],
+  )
 
   const [query, setQuery] = useState<QueryForm>({ ...defaultQuery(), ...saved.query })
   const [applied, setApplied] = useState<QueryForm>({ ...defaultQuery(), ...saved.query, keyword: saved.query?.keyword || '' })
