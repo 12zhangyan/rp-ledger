@@ -512,7 +512,7 @@ export default function LedgerPage({
               type="button"
               disabled={busy}
               onClick={() => onOpenExportReceipts(exportYear, exportMonth)}
-              aria-label="导出当前筛选年月票据文件夹"
+              aria-label="导出票据日期范围文件夹"
             >
               <Icon name="receipt" size={16} />
               导出票据
@@ -999,7 +999,7 @@ export default function LedgerPage({
       )}
 
       <p className="hint-line">
-        报账日期用于月度筛选/导出；导出票据为「月份 / 分类 / 几号到几号」。凭证支持图片与 PDF。
+        报账日期用于筛选和日期范围导出；导出票据为「日期范围 / 分类 / 几号到几号」。凭证支持图片与 PDF。
         当前：{applied.year ? `${applied.year}年` : '全部年份'}
         {applied.month ? ` · ${Number(applied.month)}月` : ' · 全年'}。
       </p>
