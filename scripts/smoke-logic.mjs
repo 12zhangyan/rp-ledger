@@ -165,6 +165,30 @@ function sanitizeFilePart(raw) {
 assert.equal(sanitizeFilePart('油费.'), '油费')
 assert.equal(sanitizeFilePart('a/b'), 'a_b')
 
+function isValidYmd(ymd) {
+  const parsed = parseYmd(ymd)
+  if (!parsed) return false
+  const date = new Date(Date.UTC(parsed.y, parsed.mo - 1, parsed.d))
+  return (
+    date.getUTCFullYear() === parsed.y &&
+    date.getUTCMonth() + 1 === parsed.mo &&
+    date.getUTCDate() === parsed.d
+  )
+}
+function validateDateRange(start, end) {
+  if (!isValidYmd(start) || !isValidYmd(end)) {
+    throw new Error('请选择有效的开始日期和结束日期')
+  }
+  if (start > end) throw new Error('开始日期不能晚于结束日期')
+  return { start, end }
+}
+assert.deepEqual(validateDateRange('2025-12-31', '2026-01-01'), {
+  start: '2025-12-31',
+  end: '2026-01-01',
+})
+assert.throws(() => validateDateRange('2026-02-31', '2026-03-01'))
+assert.throws(() => validateDateRange('2026-08-02', '2026-08-01'))
+
 function parsePeriodFolderText(raw, yearHint) {
   const s0 = String(raw || '')
     .trim()

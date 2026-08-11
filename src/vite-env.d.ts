@@ -62,6 +62,10 @@ interface LedgerApi {
     filePath: string
     skippedImages: number
   } | null>
+  exportRange: (range: { start: string; end: string }) => Promise<{
+    filePath: string
+    skippedImages: number
+  } | null>
   exportReceipts: (month: string) => Promise<{
     folders: number
     files: number

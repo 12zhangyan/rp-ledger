@@ -10,6 +10,7 @@ import {
 } from '../lib/format'
 import { loadJson, saveJson } from '../lib/storage'
 import type { Account, Attachment, Category, DocType, Transaction, TxType } from '../types'
+import Icon from './Icon'
 
 type QueryForm = {
   year: string
@@ -360,22 +361,29 @@ export default function LedgerPage({
   return (
     <>
       <div className="stats-grid">
-        <div className="stat">
-          <span>筛选结果 · 收入</span>
+        <div className="stat stat-income">
+          <div className="stat-head">
+            <span>筛选结果 · 收入</span>
+            <span className="stat-glyph" aria-hidden="true">↗</span>
+          </div>
           <strong className="amount-pos" title={formatRp(income)}>
             {formatRp(income)}
           </strong>
         </div>
-        <div className="stat">
-          <span>筛选结果 · 支出</span>
+        <div className="stat stat-expense">
+          <div className="stat-head">
+            <span>筛选结果 · 支出</span>
+            <span className="stat-glyph" aria-hidden="true">↘</span>
+          </div>
           <strong className="amount-neg" title={formatRp(expense)}>
             {formatRp(expense)}
           </strong>
         </div>
-        <div className="stat">
-          <span>
-            共 {total} 笔 · 净额
-          </span>
+        <div className="stat stat-net">
+          <div className="stat-head">
+            <span>共 {total} 笔 · 净额</span>
+            <span className="stat-glyph" aria-hidden="true">≈</span>
+          </div>
           <strong className={net < 0 ? 'amount-neg' : 'amount-pos'} title={formatRp(net)}>
             {formatRp(net)}
           </strong>
@@ -383,6 +391,13 @@ export default function LedgerPage({
       </div>
 
       <div className="panel filter-panel">
+        <div className="filter-head">
+          <div>
+            <strong>筛选流水</strong>
+            <span>组合条件定位账目</span>
+          </div>
+          <span className="filter-status">{loading ? '读取中' : `共 ${total} 笔`}</span>
+        </div>
         <div className="filter-grid">
           <div className="field">
             <label htmlFor="q-year">年份</label>
@@ -471,12 +486,15 @@ export default function LedgerPage({
           </div>
           <div className="filter-actions">
             <button className="btn" type="button" disabled={busy || loading} onClick={search}>
+              <Icon name="search" size={16} />
               查询
             </button>
             <button className="btn secondary" type="button" disabled={busy || loading} onClick={resetQuery}>
+              <Icon name="reset" size={16} />
               重置
             </button>
             <button className="btn secondary" type="button" disabled={busy} onClick={openCreate} aria-label="新增流水">
+              <Icon name="add" size={16} />
               新增流水
             </button>
             <button
@@ -486,6 +504,7 @@ export default function LedgerPage({
               onClick={() => onOpenExport(exportYear, exportMonth)}
               aria-label="导出当前筛选年月 Excel"
             >
+              <Icon name="export" size={16} />
               导出 Excel
             </button>
             <button
@@ -495,6 +514,7 @@ export default function LedgerPage({
               onClick={() => onOpenExportReceipts(exportYear, exportMonth)}
               aria-label="导出当前筛选年月票据文件夹"
             >
+              <Icon name="receipt" size={16} />
               导出票据
             </button>
             {loading && <span className="loading-dot">加载中…</span>}
@@ -505,6 +525,9 @@ export default function LedgerPage({
       <div className={`table-wrap panel ${loading ? 'is-loading' : ''}`}>
         {list.length === 0 && !loading ? (
           <div className="empty empty-ledger">
+            <div className="empty-visual" aria-hidden="true">
+              <Icon name="ledger" size={27} />
+            </div>
             <div className="empty-title">还没有流水</div>
             <p>可以先「新增流水」，或从旧 Excel 导入日记账。</p>
             <div className="toolbar" style={{ justifyContent: 'center' }}>

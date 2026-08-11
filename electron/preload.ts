@@ -74,6 +74,11 @@ const api = {
       filePath: string
       skippedImages: number
     } | null>,
+  exportRange: (range: { start: string; end: string }) =>
+    ipcRenderer.invoke('export:range', range) as Promise<{
+      filePath: string
+      skippedImages: number
+    } | null>,
   exportReceipts: (month: string) => ipcRenderer.invoke('export:receipts', month),
   importExcel: (mode: 'merge' | 'replace' = 'merge') =>
     ipcRenderer.invoke('import:excel', mode),

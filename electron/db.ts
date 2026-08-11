@@ -521,6 +521,8 @@ export function getOpeningBalanceTotal() {
 export interface TxQuery {
   year?: string
   month?: string // YYYY-MM 或 MM
+  start?: string
+  end?: string
   account_id?: number
   category_id?: number
   type?: TxType | ''
@@ -547,6 +549,15 @@ function buildTxWhere(filters?: TxQuery) {
       where.push("strftime('%m', t.date) = ?")
       params.push(filters.month.padStart(2, '0'))
     }
+  }
+
+  if (filters?.start && /^\d{4}-\d{2}-\d{2}$/.test(filters.start)) {
+    where.push('t.date >= ?')
+    params.push(filters.start)
+  }
+  if (filters?.end && /^\d{4}-\d{2}-\d{2}$/.test(filters.end)) {
+    where.push('t.date <= ?')
+    params.push(filters.end)
   }
 
   if (filters?.account_id) {
@@ -687,14 +698,20 @@ export function getTransactionById(id: number) {
 
 export function withRunningBalance(
   rows: TransactionRow[],
-  opts?: { month?: string },
+  opts?: { month?: string; start?: string },
 ): TransactionRow[] {
   const opening = getOpeningBalanceTotal()
   let balance = opening
-  if (opts?.month && /^\d{4}-\d{2}$/.test(opts.month)) {
+  const balanceStart =
+    opts?.start && /^\d{4}-\d{2}-\d{2}$/.test(opts.start)
+      ? opts.start
+      : opts?.month && /^\d{4}-\d{2}$/.test(opts.month)
+        ? `${opts.month}-01`
+        : null
+  if (balanceStart) {
     const prior = queryOne<{ s: number }>(
       `SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE date < ?`,
-      [`${opts.month}-01`],
+      [balanceStart],
     )
     balance = opening + Number(prior?.s ?? 0)
   }
@@ -707,6 +724,19 @@ export function withRunningBalance(
 export function listTransactionsForExport(month: string) {
   const rows = listTransactions({ month, order: 'asc', withAttachments: true })
   return withRunningBalance(rows, { month })
+}
+
+export function getBalanceBeforeDate(date: string) {
+  const prior = queryOne<{ total: number }>(
+    'SELECT COALESCE(SUM(amount), 0) AS total FROM transactions WHERE date < ?',
+    [date],
+  )
+  return getOpeningBalanceTotal() + Number(prior?.total ?? 0)
+}
+
+export function listTransactionsForExportRange(start: string, end: string) {
+  const rows = listTransactions({ start, end, order: 'asc', withAttachments: true })
+  return withRunningBalance(rows, { start })
 }
 
 export function findDuplicateTransaction(input: {
