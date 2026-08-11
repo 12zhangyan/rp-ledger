@@ -19,11 +19,23 @@ const exe = path.join(root, 'release', 'win-unpacked', '印尼盾记账.exe')
 const port = 9333
 const userData = path.join(os.tmpdir(), `rp-ledger-ui-e2e-${Date.now()}`)
 const exportDir = path.join(userData, 'exports')
+const attachmentFixture = path.join(userData, 'receipt-fixture.png')
 const results = []
 
 function log(name, ok, detail = '') {
   results.push({ name, ok, detail })
   console.log(`  ${ok ? '✓' : '✗'} ${name}${detail ? ` — ${detail}` : ''}`)
+}
+
+function listFilesRecursively(dir) {
+  if (!fs.existsSync(dir)) return []
+  const files = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...listFilesRecursively(fullPath))
+    else if (entry.isFile()) files.push(fullPath)
+  }
+  return files
 }
 
 async function waitForCdp(ms = 20000) {
@@ -57,6 +69,13 @@ if (!fs.existsSync(exe)) {
 
 fs.mkdirSync(userData, { recursive: true })
 fs.mkdirSync(exportDir, { recursive: true })
+fs.writeFileSync(
+  attachmentFixture,
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  ),
+)
 console.log('UI E2E 启动', exe)
 console.log('userData:', userData)
 
@@ -67,7 +86,11 @@ const child = spawn(
     cwd: path.dirname(exe),
     stdio: 'ignore',
     windowsHide: false,
-    env: { ...process.env, RP_LEDGER_E2E_EXPORT_DIR: exportDir },
+    env: {
+      ...process.env,
+      RP_LEDGER_E2E_EXPORT_DIR: exportDir,
+      RP_LEDGER_E2E_ATTACHMENT_PATH: attachmentFixture,
+    },
   },
 )
 
@@ -106,7 +129,7 @@ try {
     const brand = await page.locator('.brand-mark').innerText()
     log('品牌展示', brand.includes('印尼盾记账'), brand)
     const ver = await page.locator('.version-pill').innerText().catch(() => '')
-    log('版本号显示', /^v?1\.4\.9$/.test(ver.trim()) || ver.includes('1.4.9'), ver || '(空)')
+    log('版本号显示', /^v?1\.4\.10$/.test(ver.trim()) || ver.includes('1.4.10'), ver || '(空)')
     const h1 = await page.locator('h1').first().innerText()
     log('默认记账明细页', h1.includes('记账明细'), h1)
     const sub = await page.locator('.topbar p').first().innerText()
@@ -214,7 +237,44 @@ try {
     `${oilRow?.period_start}~${oilRow?.period_end}`,
   )
 
-  // 5. 导出对话框（不点原生保存，避免卡住）
+  const receiptRangeSetup = await page.evaluate(async (endId) => {
+    const accounts = await window.api.listAccounts()
+    const categories = await window.api.listCategories()
+    const common = {
+      account_id: accounts[0].id,
+      category_id: categories[0]?.id || null,
+      type: '支出',
+      amount: 100,
+      doc_type_id: null,
+      checked_at: '',
+    }
+    const startId = await window.api.createTransaction({
+      ...common,
+      date: '2025-12-31',
+      period_start: '2025-12-31',
+      period_end: '2025-12-31',
+      note: 'E2E 票据范围开始日',
+    })
+    const outsideId = await window.api.createTransaction({
+      ...common,
+      date: '2026-07-16',
+      period_start: '2026-07-16',
+      period_end: '2026-07-16',
+      note: 'E2E 票据范围外',
+    })
+    const counts = []
+    for (const id of [startId, endId, outsideId]) {
+      counts.push((await window.api.addAttachments(id)).length)
+    }
+    return { startId, endId, outsideId, counts }
+  }, created.id)
+  log(
+    '真实票据附件测试数据',
+    receiptRangeSetup.counts.length === 3 && receiptRangeSetup.counts.every((count) => count === 1),
+    `ids=${receiptRangeSetup.startId},${receiptRangeSetup.endId},${receiptRangeSetup.outsideId}`,
+  )
+
+  // 5. 导出对话框（E2E 环境直接写临时目录，不弹原生选择框）
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
   await page.locator('.side-actions').getByRole('button', { name: '导出票据文件夹' }).click()
@@ -222,8 +282,41 @@ try {
   const receiptModal = page.locator('.modal, [role="dialog"]').filter({ hasText: /票据|导出/ })
   const receiptOpen = (await receiptModal.count()) > 0
   const receiptText = receiptOpen ? await receiptModal.first().innerText() : ''
-  log('导出票据对话框可打开', receiptOpen && /导出|票据|月份/.test(receiptText), receiptText.slice(0, 80))
-  await page.keyboard.press('Escape')
+  const receiptStart = receiptModal.locator('#export-start')
+  const receiptEnd = receiptModal.locator('#export-end')
+  log('导出票据对话框可打开', receiptOpen && /导出|票据|日期/.test(receiptText), receiptText.slice(0, 80))
+  log('票据可选开始和结束日期', (await receiptStart.count()) === 1 && (await receiptEnd.count()) === 1)
+  await receiptStart.fill('2025-12-31')
+  await receiptEnd.fill('2026-07-15')
+  const receiptRangeApi = await page.evaluate(() => typeof window.api.exportReceiptsRange === 'function')
+  log('票据日期范围导出接口可用', receiptRangeApi)
+  await receiptModal.getByRole('button', { name: /^导出票据 / }).click()
+  await page.waitForTimeout(350)
+  const receiptToast = await page.locator('.toast').innerText().catch(() => '')
+  log('票据日期范围导出已执行', receiptToast.includes('已导出 2 个文件'), receiptToast)
+  const receiptRoot = path.join(exportDir, '票据_2025-12-31_至_2026-07-15')
+  const receiptFiles = listFilesRecursively(receiptRoot)
+  const receiptRelativeFiles = receiptFiles.map((file) => path.relative(receiptRoot, file))
+  log(
+    '票据范围真实文件含双边界且排除范围外',
+    receiptFiles.length === 2 &&
+      receiptRelativeFiles.some((file) => file.includes('2025-12-31')) &&
+      receiptRelativeFiles.some((file) => file.includes('2026-07-15')) &&
+      receiptRelativeFiles.every((file) => !file.includes('2026-07-16')),
+    receiptRelativeFiles.join(' | '),
+  )
+  log(
+    '票据保持分类与期间目录结构',
+    receiptRelativeFiles.every((file) => file.split(path.sep).length === 3),
+    receiptRelativeFiles.join(' | '),
+  )
+  const legacyReceiptResult = await page.evaluate(() => window.api.exportReceipts('2026-07'))
+  const legacyReceiptFiles = listFilesRecursively(path.join(exportDir, '票据_2026-07'))
+  log(
+    '旧按月票据接口仍可实际导出',
+    legacyReceiptResult?.files === 2 && legacyReceiptFiles.length === 2,
+    `result=${legacyReceiptResult?.files ?? 'null'} files=${legacyReceiptFiles.length}`,
+  )
   await page.waitForTimeout(200)
 
   await page.locator('.side-actions').getByRole('button', { name: '导出 Excel', exact: true }).click()

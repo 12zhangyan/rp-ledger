@@ -80,6 +80,8 @@ const api = {
       skippedImages: number
     } | null>,
   exportReceipts: (month: string) => ipcRenderer.invoke('export:receipts', month),
+  exportReceiptsRange: (range: { start: string; end: string }) =>
+    ipcRenderer.invoke('export:receipts-range', range),
   importExcel: (mode: 'merge' | 'replace' = 'merge') =>
     ipcRenderer.invoke('import:excel', mode),
   getDataPath: () => ipcRenderer.invoke('app:dataPath'),

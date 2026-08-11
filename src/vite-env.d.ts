@@ -74,6 +74,14 @@ interface LedgerApi {
     skippedError: number
     targetDir: string
   } | null>
+  exportReceiptsRange: (range: { start: string; end: string }) => Promise<{
+    folders: number
+    files: number
+    skipped: number
+    skippedMissing: number
+    skippedError: number
+    targetDir: string
+  } | null>
   importExcel: (mode?: 'merge' | 'replace') => Promise<{
     mode: 'merge' | 'replace'
     accounts: number

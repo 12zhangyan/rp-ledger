@@ -31,7 +31,7 @@ import {
   upsertDocType,
 } from './db'
 import { exportDateRangeToExcel, exportMonthToExcel } from './exportExcel'
-import { exportReceiptFolders } from './exportReceipts'
+import { exportReceiptFolders, exportReceiptFoldersByRange } from './exportReceipts'
 import { importLedgerExcel } from './importExcel'
 import { openPath, setupChineseMenu } from './menu'
 import { getDataDir, getImagePath, getImagesDir, mimeForExt } from './paths'
@@ -250,19 +250,26 @@ function registerIpc() {
   ipcMain.handle('years:list', () => getYearsWithData())
 
   ipcMain.handle('attachments:add', async (_e, transactionId: number) => {
-    const result = await dialog.showOpenDialog(mainWindow!, {
-      title: '选择凭证（图片或 PDF）',
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        {
-          name: '凭证文件',
-          extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'],
-        },
-        { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
-        { name: 'PDF', extensions: ['pdf'] },
-      ],
-    })
-    if (result.canceled || !result.filePaths.length) return []
+    const e2eAttachmentPath = process.env.RP_LEDGER_E2E_ATTACHMENT_PATH
+    let filePaths: string[]
+    if (e2eAttachmentPath) {
+      filePaths = [e2eAttachmentPath]
+    } else {
+      const result = await dialog.showOpenDialog(mainWindow!, {
+        title: '选择凭证（图片或 PDF）',
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          {
+            name: '凭证文件',
+            extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'],
+          },
+          { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+          { name: 'PDF', extensions: ['pdf'] },
+        ],
+      })
+      if (result.canceled || !result.filePaths.length) return []
+      filePaths = result.filePaths
+    }
 
     if (!getTransactionById(transactionId)) {
       throw new Error('流水不存在，无法添加凭证')
@@ -270,7 +277,7 @@ function registerIpc() {
 
     const allowed = ['.jpg', '.png', '.gif', '.webp', '.pdf']
     const saved = []
-    for (const filePath of result.filePaths) {
+    for (const filePath of filePaths) {
       let ext = path.extname(filePath).toLowerCase() || '.jpg'
       if (ext === '.jpeg') ext = '.jpg'
       if (!allowed.includes(ext)) continue
@@ -346,6 +353,10 @@ function registerIpc() {
     if (!/^\d{4}-\d{2}$/.test(month)) {
       throw new Error('请选择有效的年份和月份')
     }
+    const e2eExportDir = process.env.RP_LEDGER_E2E_EXPORT_DIR
+    if (e2eExportDir) {
+      return exportReceiptFolders(month, path.join(e2eExportDir, `票据_${month}`))
+    }
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: `选择导出目录（分类 → 几号到几号）· ${month}`,
       properties: ['openDirectory', 'createDirectory'],
@@ -353,6 +364,22 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return null
     const targetDir = path.join(result.filePaths[0], `票据_${month}`)
     return exportReceiptFolders(month, targetDir)
+  })
+
+  ipcMain.handle('export:receipts-range', async (_e, range: { start: string; end: string }) => {
+    const { start, end } = range || ({} as { start: string; end: string })
+    validateDateRange(start, end)
+    const folderName = `票据_${start}_至_${end}`
+    const e2eExportDir = process.env.RP_LEDGER_E2E_EXPORT_DIR
+    if (e2eExportDir) {
+      return exportReceiptFoldersByRange(start, end, path.join(e2eExportDir, folderName))
+    }
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: `选择导出目录（分类 → 几号到几号）· ${start} 至 ${end}`,
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return exportReceiptFoldersByRange(start, end, path.join(result.filePaths[0], folderName))
   })
 
   ipcMain.handle('import:excel', async (_e, mode: 'merge' | 'replace' = 'merge') => {

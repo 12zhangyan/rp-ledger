@@ -13,10 +13,6 @@ import type { Account, AccountSummary, Category, CategoryStat, DocType } from '.
 
 type Tab = 'ledger' | 'accounts' | 'stats' | 'settings'
 
-function currentYear() {
-  return String(new Date().getFullYear())
-}
-
 function monthBounds(month = currentMonth()) {
   const [y, m] = month.split('-').map(Number)
   const last = new Date(y, m, 0).getDate()
@@ -42,8 +38,6 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [exportMode, setExportMode] = useState<'excel' | 'receipts'>('excel')
-  const [exportYear, setExportYear] = useState(currentYear())
-  const [exportMonthNum, setExportMonthNum] = useState(currentMonth().slice(5))
   const [exportStart, setExportStart] = useState(initialBounds.start)
   const [exportEnd, setExportEnd] = useState(initialBounds.end)
   const [exportCount, setExportCount] = useState<number | null>(null)
@@ -146,18 +140,14 @@ export default function App() {
 
   useEffect(() => {
     if (!exportOpen || !apiReady) return
-    if (exportMode === 'excel' && !exportRangeValid) {
+    if (!exportRangeValid) {
       setExportCount(null)
       return
     }
     let cancelled = false
     setExportCount(null)
-    const filters =
-      exportMode === 'excel'
-        ? { start: exportStart, end: exportEnd, page: 1, pageSize: 1 }
-        : { year: exportYear, month: exportMonthNum, page: 1, pageSize: 1 }
     window.api
-      .queryTransactions(filters)
+      .queryTransactions({ start: exportStart, end: exportEnd, page: 1, pageSize: 1 })
       .then((r) => {
         if (!cancelled) setExportCount(r.total)
       })
@@ -170,8 +160,6 @@ export default function App() {
   }, [
     exportOpen,
     exportMode,
-    exportYear,
-    exportMonthNum,
     exportStart,
     exportEnd,
     exportRangeValid,
@@ -212,7 +200,7 @@ export default function App() {
   async function showAbout() {
     const ver = await window.api.getVersion()
     alert(
-      `印尼盾记账\n版本 ${ver}\n\n本地账本软件，数据保存在本机，货币单位为印尼盾（Rp）。\n支持报账日期、业务期间、图片/PDF 凭证；导出票据按「月份 / 分类 / 几号到几号」分文件夹。`,
+      `印尼盾记账\n版本 ${ver}\n\n本地账本软件，数据保存在本机，货币单位为印尼盾（Rp）。\n支持报账日期、业务期间、图片/PDF 凭证；导出票据按「日期范围 / 分类 / 几号到几号」分文件夹。`,
     )
   }
 
@@ -221,36 +209,27 @@ export default function App() {
     month?: string,
     mode: 'excel' | 'receipts' = 'excel',
   ) {
-    const selectedMonth = `${year || currentYear()}-${month || currentMonth().slice(5)}`
+    const selectedMonth = year && month ? `${year}-${month}` : currentMonth()
     const bounds = monthBounds(selectedMonth)
     setExportMode(mode)
-    setExportYear(year || currentYear())
-    setExportMonthNum(month || currentMonth().slice(5))
     setExportStart(bounds.start)
     setExportEnd(bounds.end)
     setExportOpen(true)
   }
 
   async function confirmExport() {
-    const month = `${exportYear}-${exportMonthNum.padStart(2, '0')}`
-    if (exportMode === 'receipts' && !/^\d{4}-\d{2}$/.test(month)) {
-      showToast('请选择有效的年份和月份')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(exportStart) || !/^\d{4}-\d{2}-\d{2}$/.test(exportEnd)) {
+      showToast('请选择有效的开始日期和结束日期')
       return
     }
-    if (exportMode === 'excel') {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(exportStart) || !/^\d{4}-\d{2}-\d{2}$/.test(exportEnd)) {
-        showToast('请选择有效的开始日期和结束日期')
-        return
-      }
-      if (exportStart > exportEnd) {
-        showToast('开始日期不能晚于结束日期')
-        return
-      }
+    if (exportStart > exportEnd) {
+      showToast('开始日期不能晚于结束日期')
+      return
     }
     setBusy(true)
     try {
       if (exportMode === 'receipts') {
-        const result = await window.api.exportReceipts(month)
+        const result = await window.api.exportReceiptsRange({ start: exportStart, end: exportEnd })
         if (result) {
           setExportOpen(false)
           if (result.files === 0) {
@@ -261,7 +240,7 @@ export default function App() {
             showToast(
               result.skipped > 0
                 ? `未导出任何文件${why}`
-                : '该月没有可导出的凭证文件',
+                : '所选日期范围没有可导出的凭证文件',
             )
           } else {
             const parts: string[] = []
@@ -341,14 +320,6 @@ export default function App() {
     showToast('已添加')
     await refreshMeta()
   }
-
-  const yearOptions = useMemo(
-    () =>
-      Array.from(
-        new Set([currentYear(), ...years, ...months.map((m) => m.slice(0, 4))]),
-      ).sort((a, b) => Number(b) - Number(a)),
-    [years, months],
-  )
 
   if (!apiReady) {
     return (
@@ -697,7 +668,7 @@ export default function App() {
             </h3>
             <p style={{ color: 'var(--muted)', marginTop: 0 }}>
               {exportMode === 'receipts'
-                ? '按报账年月筛选，再按「分类 → 几号到几号」建文件夹，放入该月全部图片/PDF。Esc 关闭。'
+                ? '选择开始日期和结束日期，可跨月、跨年；再按「分类 → 几号到几号」建文件夹，放入范围内全部图片/PDF。Esc 关闭。'
                 : '选择开始日期和结束日期，可跨月、跨年；导出范围包含起止当天。Esc 关闭。'}
             </p>
             <div className="toolbar" style={{ marginBottom: 12 }}>
@@ -716,77 +687,39 @@ export default function App() {
                 票据文件夹
               </button>
             </div>
-            {exportMode === 'excel' ? (
-              <div className="filter-grid export-range-grid" style={{ marginBottom: 8 }}>
-                <div className="field">
-                  <label htmlFor="export-start">开始日期（含）</label>
-                  <input
-                    id="export-start"
-                    type="date"
-                    value={exportStart}
-                    onChange={(e) => setExportStart(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="export-end">结束日期（含）</label>
-                  <input
-                    id="export-end"
-                    type="date"
-                    value={exportEnd}
-                    onChange={(e) => setExportEnd(e.target.value)}
-                  />
-                </div>
+            <div className="filter-grid export-range-grid" style={{ marginBottom: 8 }}>
+              <div className="field">
+                <label htmlFor="export-start">开始日期（含）</label>
+                <input
+                  id="export-start"
+                  type="date"
+                  value={exportStart}
+                  onChange={(e) => setExportStart(e.target.value)}
+                />
               </div>
-            ) : (
-              <div className="filter-grid" style={{ marginBottom: 8 }}>
-                <div className="field">
-                  <label htmlFor="export-year">年份</label>
-                  <select
-                    id="export-year"
-                    value={exportYear}
-                    onChange={(e) => setExportYear(e.target.value)}
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>
-                        {y}年
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="export-month">月份</label>
-                  <select
-                    id="export-month"
-                    value={exportMonthNum}
-                    onChange={(e) => setExportMonthNum(e.target.value)}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => {
-                      const m = String(i + 1).padStart(2, '0')
-                      return (
-                        <option key={m} value={m}>
-                          {Number(m)}月
-                        </option>
-                      )
-                    })}
-                  </select>
-                </div>
+              <div className="field">
+                <label htmlFor="export-end">结束日期（含）</label>
+                <input
+                  id="export-end"
+                  type="date"
+                  value={exportEnd}
+                  onChange={(e) => setExportEnd(e.target.value)}
+                />
               </div>
-            )}
+            </div>
             <div className="export-preview">
-              {exportMode === 'excel' && !exportRangeValid
+              {!exportRangeValid
                 ? exportStart && exportEnd && exportStart > exportEnd
                   ? '开始日期不能晚于结束日期。'
                   : '请选择有效的开始日期和结束日期。'
                 : exportCount === null
-                ? exportMode === 'receipts'
-                  ? '正在统计该月流水…'
-                  : '正在统计所选日期范围的流水…'
+                ? '正在统计所选日期范围的流水…'
                 : exportCount === 0
                   ? exportMode === 'receipts'
-                    ? '该月暂无流水，无可导出凭证。'
+                    ? '所选日期范围暂无流水，无可导出凭证。'
                     : '所选日期范围暂无流水，仍可导出空表模板。'
                   : exportMode === 'receipts'
-                    ? `将导出该月 ${exportCount} 笔流水的凭证，按分类与几号到几号分文件夹。`
+                    ? `将导出所选日期范围 ${exportCount} 笔流水的凭证，按分类与几号到几号分文件夹。`
                     : `将导出 ${exportCount} 笔流水：总表排序 + 按分类分表（内按几号到几号分组）。`}
             </div>
             {months.length > 0 && (
@@ -799,22 +732,15 @@ export default function App() {
                     key={m}
                     type="button"
                     className={(() => {
-                      if (exportMode === 'receipts') {
-                        return m === `${exportYear}-${exportMonthNum}` ? 'chip active' : 'chip'
-                      }
                       const bounds = monthBounds(m)
                       return bounds.start === exportStart && bounds.end === exportEnd
                         ? 'chip active'
                         : 'chip'
                     })()}
                     onClick={() => {
-                      setExportYear(m.slice(0, 4))
-                      setExportMonthNum(m.slice(5))
-                      if (exportMode === 'excel') {
-                        const bounds = monthBounds(m)
-                        setExportStart(bounds.start)
-                        setExportEnd(bounds.end)
-                      }
+                      const bounds = monthBounds(m)
+                      setExportStart(bounds.start)
+                      setExportEnd(bounds.end)
                     }}
                   >
                     {formatMonthLabel(m)}
@@ -830,7 +756,7 @@ export default function App() {
                 {busy
                   ? '导出中…'
                   : exportMode === 'receipts'
-                    ? `导出票据 ${formatMonthLabel(`${exportYear}-${exportMonthNum}`)}`
+                    ? `导出票据 ${formatDateRangeLabel(exportStart, exportEnd)}`
                     : `导出 Excel ${formatDateRangeLabel(exportStart, exportEnd)}`}
               </button>
             </div>

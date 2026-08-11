@@ -1,7 +1,7 @@
 {
   "name": "rp-ledger",
   "private": true,
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "印尼盾本地记账软件",
   "author": "RP Ledger",
   "main": "dist-electron/main.js",

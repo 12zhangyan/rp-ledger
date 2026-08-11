@@ -144,9 +144,9 @@ try {
     const brand = await page.locator('.brand-mark').innerText()
     check('品牌名', brand.trim() === '印尼盾记账', brand)
     const verUi = (await page.locator('.version-pill').first().innerText()).trim()
-    check('侧栏版本 pill', verUi.includes('1.4.9'), verUi)
+    check('侧栏版本 pill', verUi.includes('1.4.10'), verUi)
     const verApi = await page.evaluate(() => window.api.getVersion())
-    check('API 版本一致', verApi === '1.4.9', verApi)
+    check('API 版本一致', verApi === '1.4.10', verApi)
     const h1 = await page.locator('h1').first().innerText()
     check('默认页记账明细', h1.includes('记账明细'), h1)
     const sub = await page.locator('.topbar p').first().innerText()
@@ -663,7 +663,13 @@ try {
     let modal = page.locator('[role="dialog"], .modal').filter({ hasText: /导出/ })
     let text = await modal.first().innerText()
     check('票据导出对话框', /票据|分类|几号到几号|文件夹/.test(text), text.slice(0, 100))
-    check('可选年份月份', /年份|月份|2026/.test(text))
+    check('票据显示开始和结束日期', text.includes('开始日期') && text.includes('结束日期'))
+    await modal.locator('#export-start').fill('2026-07-01')
+    await modal.locator('#export-end').fill('2026-08-31')
+    const hasReceiptRange = await page.evaluate(
+      () => typeof window.api.exportReceiptsRange === 'function',
+    )
+    check('票据日期范围导出接口可用', hasReceiptRange)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(200)
 
@@ -873,7 +879,7 @@ try {
     check('7 月笔数合理', final.julTotal >= 12, String(final.julTotal))
     check('符号规则全局成立', final.signOk)
     check('期间起止顺序全局成立', final.periodOk)
-    check('版本仍为 1.4.9', final.ver === '1.4.9', final.ver)
+    check('版本仍为 1.4.10', final.ver === '1.4.10', final.ver)
     check('数据目录仍隔离', String(final.path).includes('rp-ledger-e2e20'), final.path)
 
     const dbFile = path.join(final.path, 'ledger.sqlite')
