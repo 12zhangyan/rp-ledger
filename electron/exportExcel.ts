@@ -6,26 +6,26 @@ const require = createRequire(import.meta.url)
 const ExcelJS = require('exceljs') as typeof import('exceljs')
 import {
   getAccountSummary,
+  getBalanceBeforeDate,
   getCategoryStats,
-  getOpeningBalanceTotal,
   listAccounts,
   listCategories,
   listDocTypes,
-  listTransactionsForExport,
+  listTransactionsForExportRange,
   type TransactionRow,
 } from './db'
-import { categoryPathLabel, periodPathLabel } from './period'
+import {
+  categoryPathLabel,
+  formatDateRangeTitle,
+  periodPathLabel,
+  validateDateRange,
+} from './period'
 import { excelImageExt, getImagePath, isPdfName } from './paths'
-
-function formatMonthTitle(month: string) {
-  const [y, m] = month.split('-')
-  return `${y}年${Number(m)}月`
-}
 
 /** Excel 工作表名：最多 31 字，禁 \ / ? * [ ] */
 function excelSheetName(raw: string, used: Set<string>): string {
   let base = String(raw || '未分类')
-    .replace(/[\\/*?:\[\]]/g, '_')
+    .replace(/[\\/*?:[\]]/g, '_')
     .trim()
     .slice(0, 31)
   if (!base) base = '未分类'
@@ -96,20 +96,26 @@ export type ExportExcelResult = {
   skippedImages: number
 }
 
-export async function exportMonthToExcel(month: string, targetPath: string): Promise<ExportExcelResult> {
+export async function exportDateRangeToExcel(
+  start: string,
+  end: string,
+  targetPath: string,
+): Promise<ExportExcelResult> {
+  validateDateRange(start, end)
+  const rangeTitle = formatDateRangeTitle(start, end)
   const workbook = new ExcelJS.Workbook()
   workbook.creator = '印尼盾记账'
   workbook.created = new Date()
   const skippedImageNames = new Set<string>()
   const usedSheetNames = new Set<string>()
 
-  const txs = sortTxs(listTransactionsForExport(month))
+  const txs = sortTxs(listTransactionsForExportRange(start, end))
   const accounts = listAccounts()
   const categories = listCategories()
   const docTypes = listDocTypes()
-  const summary = getAccountSummary(month)
-  const stats = getCategoryStats(month)
-  const opening = getOpeningBalanceTotal()
+  const summary = getAccountSummary({ start, end })
+  const stats = getCategoryStats({ start, end })
+  const opening = getBalanceBeforeDate(start)
   const accountNames = accounts.map((a) => a.name).filter((n) => n !== '月余额')
 
   async function embedFirstImage(sheet: ExcelJS.Worksheet, tx: TransactionRow, rowIdx: number) {
@@ -173,7 +179,7 @@ export async function exportMonthToExcel(month: string, targetPath: string): Pro
     views: [{ state: 'frozen', ySplit: 3 }],
   })
   detail.mergeCells('A1:K1')
-  detail.getCell('A1').value = `日记账 · ${accountNames.join(' / ')} · ${formatMonthTitle(month)}（按分类 → 几号到几号）`
+  detail.getCell('A1').value = `日记账 · ${accountNames.join(' / ')} · ${rangeTitle}（按分类 → 几号到几号）`
   detail.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1F4E3D' } }
   DETAIL_HEADERS.forEach((h, i) => {
     detail.getCell(3, i + 1).value = h
@@ -183,7 +189,7 @@ export async function exportMonthToExcel(month: string, targetPath: string): Pro
 
   let rowIdx = 4
   detail.getRow(rowIdx).values = [
-    `${month}-01`,
+    start,
     '',
     '月余额',
     '余额',
@@ -218,7 +224,7 @@ export async function exportMonthToExcel(month: string, targetPath: string): Pro
       views: [{ state: 'frozen', ySplit: 3 }],
     })
     sheet.mergeCells('A1:K1')
-    sheet.getCell('A1').value = `${formatMonthTitle(month)} · ${catName}（按几号到几号分组）`
+    sheet.getCell('A1').value = `${rangeTitle} · ${catName}（按几号到几号分组）`
     sheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1F4E3D' } }
     DETAIL_HEADERS.forEach((h, i) => {
       sheet.getCell(3, i + 1).value = h
@@ -251,7 +257,7 @@ export async function exportMonthToExcel(month: string, targetPath: string): Pro
   // —— 凭证图片（分类 → 几号到几号） ——
   const receiptSheet = workbook.addWorksheet(excelSheetName('凭证图片', usedSheetNames))
   receiptSheet.getCell('A1').value =
-    `${formatMonthTitle(month)} 凭证（按分类 → 几号到几号；图片嵌入 / PDF 仅列文件名）`
+    `${rangeTitle} 凭证（按分类 → 几号到几号；图片嵌入 / PDF 仅列文件名）`
   receiptSheet.getCell('A1').font = { bold: true, size: 14 }
   receiptSheet.getColumn(1).width = 12
   receiptSheet.getColumn(2).width = 14
@@ -380,4 +386,16 @@ export async function exportMonthToExcel(month: string, targetPath: string): Pro
 
   await workbook.xlsx.writeFile(targetPath)
   return { filePath: targetPath, skippedImages: skippedImageNames.size }
+}
+
+/** 保留旧按月接口，供已有调用兼容。 */
+export function exportMonthToExcel(month: string, targetPath: string): Promise<ExportExcelResult> {
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('请选择有效的年份和月份')
+  const [year, monthNumber] = month.split('-').map(Number)
+  const lastDay = new Date(year, monthNumber, 0).getDate()
+  return exportDateRangeToExcel(
+    `${month}-01`,
+    `${month}-${String(lastDay).padStart(2, '0')}`,
+    targetPath,
+  )
 }

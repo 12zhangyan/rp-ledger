@@ -173,6 +173,14 @@ function buildTxWhere(filters = {}) {
       params.push(filters.month.padStart(2, '0'))
     }
   }
+  if (filters.start && /^\d{4}-\d{2}-\d{2}$/.test(filters.start)) {
+    where.push('t.date >= ?')
+    params.push(filters.start)
+  }
+  if (filters.end && /^\d{4}-\d{2}-\d{2}$/.test(filters.end)) {
+    where.push('t.date <= ?')
+    params.push(filters.end)
+  }
   if (filters.account_id) {
     where.push('t.account_id = ?')
     params.push(filters.account_id)
@@ -430,6 +438,18 @@ round('年+月筛选与合计', () => {
 
   const ym = queryTransactions({ month: '2026-01', page: 1, pageSize: 10 })
   assert.equal(ym.total, jan.total)
+})
+
+round('日期范围闭区间可跨月跨年', () => {
+  const range = queryTransactions({
+    start: '2025-12-31',
+    end: '2026-02-01',
+    page: 1,
+    pageSize: 100,
+  })
+  assert.ok(range.list.some((r) => r.date === '2025-12-31'), '应包含开始日期')
+  assert.ok(range.list.some((r) => r.date === '2026-02-01'), '应包含结束日期')
+  assert.ok(range.list.every((r) => r.date >= '2025-12-31' && r.date <= '2026-02-01'))
 })
 
 round('分页边界与 pageSize 下限钳制', () => {

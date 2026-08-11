@@ -30,11 +30,12 @@ import {
   upsertCategory,
   upsertDocType,
 } from './db'
-import { exportMonthToExcel } from './exportExcel'
+import { exportDateRangeToExcel, exportMonthToExcel } from './exportExcel'
 import { exportReceiptFolders } from './exportReceipts'
 import { importLedgerExcel } from './importExcel'
 import { openPath, setupChineseMenu } from './menu'
 import { getDataDir, getImagePath, getImagesDir, mimeForExt } from './paths'
+import { validateDateRange } from './period'
 
 const isDev = !app.isPackaged
 let mainWindow: BrowserWindow | null = null
@@ -321,6 +322,24 @@ function registerIpc() {
     })
     if (result.canceled || !result.filePath) return null
     return exportMonthToExcel(month, result.filePath)
+  })
+
+  ipcMain.handle('export:range', async (_e, range: { start: string; end: string }) => {
+    const { start, end } = range || ({} as { start: string; end: string })
+    validateDateRange(start, end)
+    const defaultName = `日记账_${start}_至_${end}.xlsx`
+    const e2eExportDir = process.env.RP_LEDGER_E2E_EXPORT_DIR
+    if (e2eExportDir) {
+      fs.mkdirSync(e2eExportDir, { recursive: true })
+      return exportDateRangeToExcel(start, end, path.join(e2eExportDir, defaultName))
+    }
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: '导出日期范围 Excel',
+      defaultPath: defaultName,
+      filters: [{ name: 'Excel 工作簿', extensions: ['xlsx'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    return exportDateRangeToExcel(start, end, result.filePath)
   })
 
   ipcMain.handle('export:receipts', async (_e, month: string) => {

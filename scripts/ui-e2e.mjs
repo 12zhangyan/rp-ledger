@@ -9,6 +9,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const ExcelJS = require('exceljs')
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const exe = path.join(root, 'release', 'win-unpacked', '印尼盾记账.exe')
@@ -63,6 +67,7 @@ const child = spawn(
     cwd: path.dirname(exe),
     stdio: 'ignore',
     windowsHide: false,
+    env: { ...process.env, RP_LEDGER_E2E_EXPORT_DIR: exportDir },
   },
 )
 
@@ -89,6 +94,12 @@ try {
   assert.ok(page, '未找到应用页面')
   await page.waitForLoadState('domcontentloaded')
   await waitForApi(page)
+  if (process.env.RP_LEDGER_CAPTURE_PATH) {
+    const capturePath = path.resolve(process.env.RP_LEDGER_CAPTURE_PATH)
+    fs.mkdirSync(path.dirname(capturePath), { recursive: true })
+    await page.screenshot({ path: capturePath })
+    console.log('UI screenshot:', capturePath)
+  }
 
   // 1. 版本与主界面
   {
@@ -219,7 +230,96 @@ try {
   await page.waitForTimeout(300)
   const excelModal = page.locator('.modal, [role="dialog"]').filter({ hasText: /导出/ })
   log('导出 Excel 对话框可打开', (await excelModal.count()) > 0)
-  await page.keyboard.press('Escape')
+  const exportStart = excelModal.locator('#export-start')
+  const exportEnd = excelModal.locator('#export-end')
+  log('Excel 可选开始和结束日期', (await exportStart.count()) === 1 && (await exportEnd.count()) === 1)
+  await exportStart.fill('2026-07-01')
+  await exportEnd.fill('2026-08-31')
+  await page.waitForTimeout(300)
+  const rangeCheck = await page.evaluate(async () => {
+    const accounts = await window.api.listAccounts()
+    const categories = await window.api.listCategories()
+    await window.api.createTransaction({
+      date: '2026-08-31',
+      period_start: '2026-08-31',
+      period_end: '2026-08-31',
+      account_id: accounts[0].id,
+      category_id: categories[0]?.id || null,
+      type: '收入',
+      amount: 1,
+      doc_type_id: null,
+      note: 'E2E 导出范围结束日',
+      checked_at: '',
+    })
+    await window.api.createTransaction({
+      date: '2026-09-01',
+      period_start: '2026-09-01',
+      period_end: '2026-09-01',
+      account_id: accounts[0].id,
+      category_id: categories[0]?.id || null,
+      type: '收入',
+      amount: 1,
+      doc_type_id: null,
+      note: 'E2E 导出范围外',
+      checked_at: '',
+    })
+    const result = await window.api.queryTransactions({
+      start: '2026-07-01',
+      end: '2026-08-31',
+      page: 1,
+      pageSize: 100,
+    })
+    return {
+      total: result.total,
+      dates: result.list.map((row) => row.date),
+      hasExportRange: typeof window.api.exportRange === 'function',
+      includesEnd: result.list.some((row) => row.note === 'E2E 导出范围结束日'),
+      excludesOutside: !result.list.some((row) => row.note === 'E2E 导出范围外'),
+    }
+  })
+  log(
+    '日期范围查询含起止日且可跨月',
+    rangeCheck.total >= 3 &&
+      rangeCheck.includesEnd &&
+      rangeCheck.excludesOutside &&
+      rangeCheck.dates.every((date) => date >= '2026-07-01' && date <= '2026-08-31'),
+    `${rangeCheck.total} 笔`,
+  )
+  log('日期范围导出接口可用', rangeCheck.hasExportRange)
+  await excelModal.getByRole('button', { name: /导出 Excel/ }).click()
+  const rangeFile = path.join(exportDir, '日记账_2026-07-01_至_2026-08-31.xlsx')
+  const rangeExported = await (async () => {
+    for (let i = 0; i < 30; i++) {
+      if (fs.existsSync(rangeFile)) {
+        const firstSize = fs.statSync(rangeFile).size
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        if (fs.existsSync(rangeFile) && fs.statSync(rangeFile).size === firstSize && firstSize > 0) {
+          return true
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    return false
+  })()
+  let exportedDates = []
+  if (rangeExported) {
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.readFile(rangeFile)
+    const sheet = workbook.getWorksheet('记账明细')
+    exportedDates = sheet
+      .getColumn(1)
+      .values.slice(5)
+      .filter((value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value))
+  }
+  log(
+    '日期范围 Excel 已生成且明细未越界',
+    rangeExported &&
+      exportedDates.length > 0 &&
+      exportedDates.includes('2026-08-31') &&
+      !exportedDates.includes('2026-09-01') &&
+      exportedDates.every((date) => date >= '2026-07-01' && date <= '2026-08-31'),
+    rangeExported ? `${exportedDates.length} 行` : '未生成文件',
+  )
 
   // 6. 设置页文案
   await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -267,6 +367,8 @@ try {
   const detail = await page.locator('main').innerText()
   log('详情含业务期间标签', detail.includes('业务期间'))
   log('详情含报账日期标签', detail.includes('报账日期'))
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(150)
 
   // 9. 账户汇总有数据
   await page.getByRole('button', { name: '账户汇总', exact: true }).click()

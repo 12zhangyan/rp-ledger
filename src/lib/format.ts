@@ -38,6 +38,16 @@ export function formatMonthLabel(month: string) {
   return `${y}年${Number(m)}月`
 }
 
+/** 2026-07-03 ~ 2027-01-05 → 2026年7月3日–2027年1月5日 */
+export function formatDateRangeLabel(start: string, end: string) {
+  const a = parseYmd(start)
+  const b = parseYmd(end)
+  if (!a || !b) return `${start}–${end}`
+  if (start === end) return `${a.y}年${a.mo}月${a.d}日`
+  if (a.y === b.y) return `${a.y}年${a.mo}月${a.d}日–${b.mo}月${b.d}日`
+  return `${a.y}年${a.mo}月${a.d}日–${b.y}年${b.mo}月${b.d}日`
+}
+
 export function attachmentUrl(storedName: string) {
   return `ledger-img://local/${encodeURIComponent(storedName)}`
 }

@@ -672,7 +672,30 @@ try {
     modal = page.locator('[role="dialog"], .modal').filter({ hasText: /导出/ })
     text = await modal.first().innerText()
     check('Excel 导出对话框', /Excel|导出/.test(text), text.slice(0, 80))
-    check('显示流水笔数或月份', /笔|月|2026|流水/.test(text))
+    check('显示开始和结束日期', text.includes('开始日期') && text.includes('结束日期'))
+    await modal.locator('#export-start').fill('2026-07-01')
+    await modal.locator('#export-end').fill('2026-08-31')
+    await page.waitForTimeout(300)
+    const rangeRows = await page.evaluate(async () => {
+      const result = await window.api.queryTransactions({
+        start: '2026-07-01',
+        end: '2026-08-31',
+        page: 1,
+        pageSize: 100,
+      })
+      return {
+        total: result.total,
+        dates: result.list.map((row) => row.date),
+        hasExportRange: typeof window.api.exportRange === 'function',
+      }
+    })
+    check(
+      '跨月范围严格过滤报账日期',
+      rangeRows.total > 0 &&
+        rangeRows.dates.every((date) => date >= '2026-07-01' && date <= '2026-08-31'),
+      `${rangeRows.total} 笔`,
+    )
+    check('日期范围导出接口可用', rangeRows.hasExportRange)
     await page.keyboard.press('Escape')
 
     // 顶部导出按钮

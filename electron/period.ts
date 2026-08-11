@@ -6,6 +6,39 @@ function parseYmd(ymd: string) {
   return { y: Number(m[1]), mo: Number(m[2]), d: Number(m[3]) }
 }
 
+/** 严格校验 YYYY-MM-DD，避免 2026-02-31 这类日期进入导出查询。 */
+export function isValidYmd(ymd: string): boolean {
+  const parsed = parseYmd(ymd)
+  if (!parsed) return false
+  const date = new Date(Date.UTC(parsed.y, parsed.mo - 1, parsed.d))
+  return (
+    date.getUTCFullYear() === parsed.y &&
+    date.getUTCMonth() + 1 === parsed.mo &&
+    date.getUTCDate() === parsed.d
+  )
+}
+
+/** Excel 导出日期范围：必填、有效且开始日期不能晚于结束日期。 */
+export function validateDateRange(start: string, end: string) {
+  if (!isValidYmd(start) || !isValidYmd(end)) {
+    throw new Error('请选择有效的开始日期和结束日期')
+  }
+  if (start > end) throw new Error('开始日期不能晚于结束日期')
+  return { start, end }
+}
+
+/** 2026-07-03 ~ 2027-01-05 → 2026年7月3日–2027年1月5日 */
+export function formatDateRangeTitle(start: string, end: string): string {
+  const a = parseYmd(start)
+  const b = parseYmd(end)
+  if (!a || !b) return `${start}–${end}`
+  if (start === end) return `${a.y}年${a.mo}月${a.d}日`
+  if (a.y === b.y) {
+    return `${a.y}年${a.mo}月${a.d}日–${b.mo}月${b.d}日`
+  }
+  return `${a.y}年${a.mo}月${a.d}日–${b.y}年${b.mo}月${b.d}日`
+}
+
 function pad2(n: number | string) {
   return String(n).padStart(2, '0')
 }
@@ -138,8 +171,11 @@ export function parsePeriodFolderText(
 
 /** Windows 友好：去非法字符，并去掉尾部空格/点 */
 export function sanitizeFilePart(raw: string): string {
-  return String(raw || '')
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+  const withoutControlChars = Array.from(String(raw || ''), (char) =>
+    char.charCodeAt(0) <= 0x1f ? '_' : char,
+  ).join('')
+  return withoutControlChars
+    .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/g, '')
